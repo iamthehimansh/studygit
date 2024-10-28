@@ -366,63 +366,22 @@ class PlaybackManager {
             const decorationState = this.getDecorationState(editor.document.uri);
             let typingSpeed = vscode.workspace.getConfiguration('studygit').get('playbackSpeed', 50);
 
-            // First: Collect all unique lines that need changes
-            const linesToProcess = new Map();
-            const seenContent = new Set();
-
+            // First pass: Handle all deletions
+            const linesToProcess = new Set();
+            
             for (const change of file.changes) {
-                const lineNumber = change.type === 'delete' ? 
-                    change.range.start.line : 
-                    change.position.line;
-
-                if (!linesToProcess.has(lineNumber)) {
-                    linesToProcess.set(lineNumber, {
-                        needsDeletion: false,
-                        insertion: null
-                    });
-                }
-
-                const lineInfo = linesToProcess.get(lineNumber);
-
-                if (change.type === 'delete') {
-                    lineInfo.needsDeletion = true;
-                } else if (change.type === 'insert') {
-                    const cleanContent = change.text;
-                        // .replace(/^["']|["']$/g, '')
-                        // .replace(/\\"|\\'|\\n/g, '')
-                        // .replace(/,\s*$/, '');
-
-                    const contentKey = `${lineNumber}:${cleanContent.trim()}`;
-                    
-                    if (!seenContent.has(contentKey)) {
-                        seenContent.add(contentKey);
-                        lineInfo.insertion = {
-                            ...change,
-                            text: cleanContent
-                        };
-                    }
+                if (change.type === 'delete' || change.type === 'insert') {
+                    const lineNumber = change.type === 'delete' ? 
+                        change.range.start.line : 
+                        change.position.line;
+                    linesToProcess.add(lineNumber);
                 }
             }
 
-            // Second: Delete all lines that need deletion
-            const sortedLines = Array.from(linesToProcess.keys()).sort((a, b) => a - b);
-            
-            for (const lineNumber of sortedLines) {
-                if (this.currentPlayback?.skip) break;
-
-                const lineInfo = linesToProcess.get(lineNumber);
-                if (!lineInfo.needsDeletion) continue;
-
+            // Delete content from all lines that will be modified
+            for (const lineNumber of linesToProcess) {
                 try {
-                    // Get current line content
-                    let currentLine;
-                    try {
-                        currentLine = editor.document.lineAt(lineNumber);
-                    } catch (e) {
-                        console.log(`Line ${lineNumber} not found, skipping deletion`);
-                        continue;
-                    }
-
+                    const currentLine = editor.document.lineAt(lineNumber);
                     if (currentLine && currentLine.text.length > 0) {
                         const deleteRange = new vscode.Range(
                             lineNumber, 0,
@@ -432,11 +391,9 @@ class PlaybackManager {
                         // Show deletion highlight
                         decorationState.deletions.push(deleteRange);
                         this.applyDecorations(editor, decorations, decorationState);
-                        
-                        // Ensure the line is visible
                         editor.revealRange(deleteRange, vscode.TextEditorRevealType.InCenter);
                         
-                        // Delete the line content
+                        // Delete the entire line content
                         await editor.edit(editBuilder => {
                             editBuilder.delete(deleteRange);
                         });
@@ -449,63 +406,62 @@ class PlaybackManager {
                 }
             }
 
-            // Third: Handle all insertions
-            for (const lineNumber of sortedLines) {
+            // Second pass: Handle insertions
+            const processedLines = new Set();
+
+            for (const change of file.changes) {
                 if (this.currentPlayback?.skip) break;
 
-                const lineInfo = linesToProcess.get(lineNumber);
-                if (!lineInfo.insertion) continue;
+                if (change.type === 'insert') {
+                    const lineNumber = change.position.line;
+                    
+                    // Skip if we've already processed this line
+                    if (processedLines.has(lineNumber)) continue;
+                    processedLines.add(lineNumber);
 
-                try {
-                    const insertion = lineInfo.insertion;
-                    let currentPosition = new vscode.Position(
-                        lineNumber,
-                        insertion.position.character
-                    );
+                    try {
+                        let currentPosition = new vscode.Position(
+                            lineNumber,
+                            change.position.character
+                        );
 
-                    // Type each character
-                    for (const char of insertion.text) {
-                        if (this.currentPlayback?.skip) break;
-                        
-                        while (this.currentPlayback?.isPaused) {
-                            await new Promise(resolve => setTimeout(resolve, 100));
+                        // Type the text exactly as it is
+                        for (const char of change.text) {
+                            if (this.currentPlayback?.skip) break;
+                            while (this.currentPlayback?.isPaused) {
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+
+                            await editor.edit(editBuilder => {
+                                editBuilder.insert(currentPosition, char);
+                            });
+                            
+                            currentPosition = new vscode.Position(
+                                currentPosition.line,
+                                currentPosition.character + 1
+                            );
+                            
+                            editor.selection = new vscode.Selection(currentPosition, currentPosition);
+                            editor.revealRange(
+                                new vscode.Range(currentPosition, currentPosition),
+                                vscode.TextEditorRevealType.InCenterIfOutsideViewport
+                            );
+                            
+                            const charSpeed = typingSpeed * (char === ' ' || char === '\t' ? 
+                                0.5 : (0.8 + Math.random() * 0.4));
+                            await new Promise(resolve => setTimeout(resolve, charSpeed));
                         }
 
-                        await editor.edit(editBuilder => {
-                            editBuilder.insert(currentPosition, char);
-                        });
-
-                        currentPosition = new vscode.Position(
-                            currentPosition.line,
-                            currentPosition.character + 1
+                        const insertedRange = new vscode.Range(
+                            new vscode.Position(lineNumber, change.position.character),
+                            currentPosition
                         );
-
-                        // Update cursor and scroll position
-                        editor.selection = new vscode.Selection(currentPosition, currentPosition);
-                        editor.revealRange(
-                            new vscode.Range(currentPosition, currentPosition),
-                            vscode.TextEditorRevealType.InCenterIfOutsideViewport
-                        );
-
-                        // Variable typing speed
-                        const charSpeed = typingSpeed * (char === ' ' || char === '\t' ? 
-                            0.5 : // Faster for whitespace
-                            0.8 + Math.random() * 0.4 // Variable for other chars
-                        );
-                        
-                        await new Promise(resolve => setTimeout(resolve, charSpeed));
+                        decorationState.additions.push(insertedRange);
+                        this.applyDecorations(editor, decorations, decorationState);
                     }
-
-                    // Add highlight for inserted text
-                    const insertedRange = new vscode.Range(
-                        new vscode.Position(lineNumber, insertion.position.character),
-                        currentPosition
-                    );
-                    decorationState.additions.push(insertedRange);
-                    this.applyDecorations(editor, decorations, decorationState);
-
-                } catch (error) {
-                    console.error(`Error inserting at line ${lineNumber}:`, error);
+                    catch (error) {
+                        console.error(`Error inserting at line ${lineNumber}:`, error);
+                    }
                 }
             }
 

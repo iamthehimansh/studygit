@@ -1,0 +1,98 @@
+{
+  "name": "studygit",
+  "displayName": "StudyGit",
+  "description": "AI-powered Git history analyzer and code playback tool",
+  "version": "0.0.1",
+  "publisher": "IamTheHimansh",
+  "repository": "https://github.com/iamthehimansh/studygit",
+  "author": {
+    "name": "Himansh Raj",
+    "email": "iamthehimansh@gmail.com",
+    "url": "https://github.com/iamthehimansh"
+  },
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other",
+    "Education",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onCommand:studygit.analyzeHistory",
+    "onCommand:studygit.startPlayback",
+    "onCommand:studygit.configurePlayback"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "studygit.analyzeHistory",
+        "title": "StudyGit: Analyze Git History"
+      },
+      {
+        "command": "studygit.startPlayback",
+        "title": "StudyGit: Start Commit Playback"
+      },
+      {
+        "command": "studygit.togglePlayback",
+        "title": "StudyGit: Toggle Playback"
+      },
+      {
+        "command": "studygit.skipCommit",
+        "title": "StudyGit: Skip Current Commit"
+      },
+      {
+        "command": "studygit.stopPlayback",
+        "title": "StudyGit: Stop Playback"
+      },
+      {
+        "command": "studygit.showPlaybackControls",
+        "title": "StudyGit: Show Playback Controls"
+      }
+    ],
+    "configuration": {
+      "title": "StudyGit",
+      "properties": {
+        "studygit.playbackSpeed": {
+          "type": "number",
+          "default": 50,
+          "description": "Character typing speed in milliseconds"
+        },
+        "studygit.useAI": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use AI for commit analysis"
+        },
+        "studygit.cleanupTempFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically clean up temporary files after playback"
+        },
+        "studygit.playbackPreferences": {
+          "type": "object",
+          "default": {},
+          "description": "Playback preferences for different workspaces"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.9",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.94.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.13.0"
+  },
+  "dependencies": {
+    "openai": "^4.0.0",
+    "simple-git": "^3.27.0",
+    "tar": "^6.2.0"
+  }
+}
